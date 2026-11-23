@@ -47,6 +47,15 @@ from a dashboard panel inside Finch.
 - A machine that can run `halogen-flash-server` (see the upstream docs for
   GPU / memory requirements)
 
+## Download
+
+Grab the latest `.fapp` installer from the
+[Releases page](https://github.com/puterjam/finch-halogen-serve/releases) —
+download `finch-halogen-serve-vX.Y.Z.fapp`, then **double-click it** (with
+Finch installed) or **drag it into the Finch window** to install. The tool
+installs disabled on purpose: open Toolcase, review the permissions and enable
+it.
+
 ## Install
 
 From source:
