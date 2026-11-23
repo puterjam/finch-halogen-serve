@@ -1,0 +1,39 @@
+{
+  "manifestVersion": 1,
+  "name": "Halogen Serve",
+  "description": "Manage the local Halogen model server: start / stop / restart, logs, health and environment checks.",
+  "main": "dist/index.js",
+  "miniToolType": "local",
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "tools": true,
+    "composerActions": [
+      { "id": "halogen-toggle", "icon": "zap", "tooltip": "Halogen 服务开关" }
+    ],
+    "settingsMenu": { "icon": "settings", "tooltip": "Halogen service controls" },
+    "iconPacks": [
+      { "id": "halogen-icons", "label": "Halogen Icons" }
+    ],
+    "appPanel": {
+      "icon": "zap",
+      "viewType": "halogen-serve.dashboard",
+      "instanceMode": "single",
+      "showInLauncher": true,
+      "source": { "type": "local", "path": "dist/dashboard.html" }
+    }
+  },
+  "settings": {
+    "fields": [
+      { "key": "port", "type": "number", "label": "API port", "default": 8731 },
+      { "key": "image", "type": "string", "label": "Container image", "default": "ghcr.io/peonist-ai/halogen-flash-server:0.18.7" },
+      { "key": "modelsDir", "type": "string", "label": "Models directory", "default": "/home/deck/halogen-models" },
+      { "key": "containerName", "type": "string", "label": "Container name", "default": "halogen-flash" }
+    ]
+  },
+  "permissions": {
+    "shell": true,
+    "filesystem": "read",
+    "network": true,
+    "secrets": ["halogen.apiKey"]
+  }
+}

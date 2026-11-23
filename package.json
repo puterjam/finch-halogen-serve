@@ -1,0 +1,14 @@
+{
+  "name": "halogen-serve",
+  "version": "0.1.0",
+  "description": "Start, stop and monitor the local Halogen model server (podman).",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/dashboard.html src/banner.webp dist/"
+  },
+  "devDependencies": {
+    "@finchtoys/minitool-api": "latest",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}

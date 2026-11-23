@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Halogen Serve</title>
+<style>
+  :root {
+    /* follow Finch theme tokens (light/dark/custom skins all inject these) */
+    --hs-bg: var(--finch-bg-main, #ffffff);
+    --hs-bg-deep: var(--finch-bg-root, #f2f2f4);
+    --hs-card: var(--finch-bg-elevated, #f6f6f7);
+    --hs-hover: var(--finch-bg-hover, rgba(0,0,0,.05));
+    --hs-text: var(--finch-text-primary, #1c1c1e);
+    --hs-text2: var(--finch-text-secondary, #6b6b70);
+    --hs-text3: var(--finch-text-tertiary, #9a9aa0);
+    --hs-border: var(--finch-border, #e3e3e6);
+    --hs-accent: var(--finch-accent, #3b82f6);
+    --hs-green: #22a06b;
+    --hs-red: #d64545;
+    --hs-radius: var(--finch-radius-md, 10px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --hs-green: #34c98a; --hs-red: #f07178; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .banner {
+    flex: none; border-radius: var(--hs-radius); overflow: hidden;
+    border: 1px solid var(--hs-border); line-height: 0;
+    max-height: 150px; position: relative;
+  }
+  .banner img {
+    width: 100%; height: 100%; max-height: 150px; object-fit: cover; object-position: center 42%;
+    display: block;
+  }
+  .banner::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,.45) 0%, transparent 45%, var(--hs-bg-deep));
+    pointer-events: none;
+  }
+  .banner .header {
+    position: absolute; left: 18px; top: 14px; z-index: 2;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 24px; font-weight: 650; letter-spacing: .01em;
+    color: #fff; line-height: 1.3;
+    text-shadow: 0 2px 10px rgba(0,0,0,.8), 0 1px 3px rgba(0,0,0,.9);
+  }
+  body {
+    font-family: var(--finch-font-body, system-ui, sans-serif);
+    font-size: var(--finch-message-font-size, 14px);
+    line-height: var(--finch-message-line-height, 1.6);
+    background: var(--hs-bg-deep); color: var(--hs-text);
+    padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;
+    height: 100vh; overflow: hidden;
+  }
+  /* tabs */
+  .tabs { display: flex; gap: 4px; flex: none; padding: 0 4px 2px; }
+  .tab {
+    font: inherit; padding: 8px 18px; cursor: pointer; border: none; background: none;
+    color: var(--hs-text2);
+  }
+  .tab:hover { color: var(--hs-text); }
+  .tab.active { color: var(--hs-accent); font-weight: 600; }
+  .tab.gear { font-size: 1.1em; padding: 6px 10px; margin-left: auto; }
+  .page { flex: 1; min-height: 0; display: none; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .page.active { display: flex; }
+  .card {
+    background: var(--hs-card); border: 1px solid var(--hs-border);
+    border-radius: var(--hs-radius); padding: 14px 16px; flex: none;
+  }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .status-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--hs-text2); flex: none; }
+  .status-dot.on { background: var(--hs-green); box-shadow: 0 0 8px var(--hs-green); }
+  .status-dot.off { background: var(--hs-text2); }
+  h1 { font-size: 1.05em; font-weight: 650; }
+  .sub { color: var(--hs-text2); font-size: .86em; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin-top: 10px; font-size: .9em; }
+  .kv dt { color: var(--hs-text2); white-space: nowrap; }
+  .kv dd { font-family: var(--finch-font-code, monospace); font-size: .95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kv dd.with-pill { display: flex; align-items: center; min-width: 0; }
+  .kv dd.with-pill #image { overflow: hidden; text-overflow: ellipsis; }
+  button {
+    font: inherit; font-weight: 500; font-size: .82em; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--hs-border); background: var(--hs-bg); color: var(--hs-text);
+    display: inline-flex; align-items: center; gap: 5px; line-height: 1.5;
+  }
+  button:hover { border-color: var(--hs-accent); }
+  button.primary { background: var(--hs-accent); border-color: var(--hs-accent); color: #fff; }
+  button.ghost { background: transparent; border-color: transparent; color: var(--hs-text2); padding: 2px 8px; }
+  button.ghost:hover { color: var(--hs-text); background: var(--hs-hover); border-color: transparent; }
+  button.icon-only { padding: 3px 6px; }
+  /* custom tooltip (replaces native title) */
+  [data-tip] { position: relative; }
+  [data-tip]::after {
+    content: attr(data-tip);
+    position: absolute; top: calc(100% + 7px); right: 0;
+    background: var(--hs-card); border: 1px solid var(--hs-border); color: var(--hs-text);
+    font-size: 13px; font-weight: 400; padding: 3px 9px; border-radius: 6px;
+    white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .15s;
+    box-shadow: 0 4px 12px rgba(0,0,0,.25); z-index: 100;
+  }
+  [data-tip]:hover::after { opacity: 1; }
+  /* kv row labels: pop the tip upward so it never overlaps the buttons below */
+  .kv dt[data-tip]::after { top: auto; bottom: calc(100% + 7px); right: auto; left: 100%; margin-left: 8px; }
+  /* banner live-metrics strip sits at the image bottom: pop tips upward, left-aligned */
+  .live-metrics [data-tip]::after { top: auto; bottom: calc(100% + 9px); right: auto; left: 0; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .ic { width: 13px; height: 13px; flex: none; }
+  /* tiny pill button for image update, sits inline without growing row height */
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px; vertical-align: 1px;
+    font-size: .72em; font-weight: 500; line-height: 1.3; padding: 1px 9px; margin-left: 8px;
+    border-radius: 999px; border: 1px solid var(--hs-accent); background: transparent;
+    color: var(--hs-accent); cursor: pointer; white-space: nowrap; flex: none;
+  }
+  .pill:hover { background: var(--hs-accent); color: #fff; }
+  .pill .ic { width: 11px; height: 11px; }
+  /* live metrics strip, overlaid at the bottom of the banner image */
+  .live-metrics {
+    position: absolute; left: 14px; bottom: 10px; right: 14px; z-index: 2; line-height: 1.4;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px;
+    background: rgba(0,0,0,.35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    color: #fff; padding: 3px 14px; border-radius: 999px; font-size: .78em;
+  }
+  .live-metrics .lm { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; color: rgba(255,255,255,.75); }
+  .live-metrics .lm b { color: #fff; font-weight: 600; font-family: var(--finch-font-code, monospace); }
+  .kv-bar { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.25); overflow: hidden; vertical-align: 1px; }
+  .kv-bar > i { display: block; height: 100%; border-radius: 3px; background: var(--hs-accent); transition: width .8s ease; }
+  .kv-bar > i.warn { background: #d29922; }
+  .kv-bar > i.hot { background: var(--hs-red, #f85149); }
+  /* cumulative stats grid (inside 性能统计 card) */
+  .sum-sep { border-top: 1px dashed var(--hs-border); margin: 14px 0 8px; }
+  .sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px 14px; margin-top: 10px; }
+  .sum-item .v { font-size: 1.25em; font-weight: 650; font-family: var(--finch-font-code, monospace); }
+  .sum-item .v small { font-size: .6em; font-weight: 500; color: var(--hs-text2); margin-left: 2px; }
+  .sum-item .k { color: var(--hs-text2); font-size: .8em; margin-top: 1px; }
+  /* log page engine badges */
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: .78em; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--hs-border); color: var(--hs-text2); margin-left: 8px; vertical-align: 1px; }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--hs-green, #3fb950); }
+  .badge.bad { border-color: #d29922; color: #d29922; }
+  .badge.bad .dot { background: #d29922; }
+  pre {
+    background: var(--hs-bg-deep); border: 1px solid var(--hs-border); border-radius: 8px;
+    padding: 10px 12px; font-family: var(--finch-font-code, monospace);
+    font-size: var(--finch-code-font-size, 12px); line-height: var(--finch-code-line-height, 1.5);
+    white-space: pre-wrap; word-break: break-all; overflow: auto;
+  }
+  .check-item { padding: 5px 0; border-bottom: 1px dashed var(--hs-border); font-size: .92em; }
+  .check-item:last-child { border-bottom: none; }
+  .check-item .d { color: var(--hs-text2); font-size: .88em; margin-left: 6px; }
+  .hidden { display: none !important; }
+  .toast {
+    position: fixed; bottom: 16px; right: 16px; background: var(--hs-card);
+    border: 1px solid var(--hs-border); border-radius: 8px; padding: 10px 14px;
+    font-size: .9em; box-shadow: 0 4px 16px rgba(0,0,0,.15); max-width: 340px;
+    opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 10;
+  }
+  .toast.show { opacity: 1; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--hs-text2); border-top-color: var(--hs-accent); border-radius: 50%; animation: sp 0.8s linear infinite; vertical-align: -2px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  /* log page */
+  #log-page { overflow: hidden; }
+  #log-box { flex: 1; min-height: 0; }
+  .log-line-info { color: var(--hs-accent); }
+  .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--hs-red); animation: blink 1.2s ease-in-out infinite; margin-right: 6px; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .ref-item { padding: 4px 0; border-bottom: 1px dashed var(--hs-border); }
+  .ref-item:last-child { border-bottom: none; }
+  .opt-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 0; border-bottom: 1px dashed var(--hs-border);
+  }
+  .opt-row:last-child { border-bottom: none; }
+  .opt-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .opt-text b { font-weight: 600; }
+  .opt-row select, .opt-row input[type="number"], .opt-row input[type="password"] {
+    font: inherit; font-size: .9em; padding: 6px 10px; border-radius: 6px;
+    border: 1px solid var(--hs-border); background: var(--hs-bg); color: var(--hs-text);
+    flex: none;
+  }
+  .opt-row select:focus, .opt-row input:focus { outline: none; border-color: var(--hs-accent); }
+  .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; cursor: pointer; border-radius: 24px;
+    background: var(--hs-border); transition: background .2s;
+  }
+  .slider::before {
+    content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px;
+    border-radius: 50%; background: #fff; transition: transform .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  }
+  .switch input:checked + .slider { background: var(--hs-accent); }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
+  /* stats card: chart left, big-number metrics right */
+  .stats-wrap { display: flex; gap: 18px; margin-top: 10px; align-items: stretch; }
+  .stats-chart { flex: 1 1 60%; min-width: 0; display: flex; flex-direction: column; gap: 6px; position: relative; }
+  #stats-canvas { width: 100%; height: 190px; display: block; cursor: crosshair; }
+  .chart-tip {
+    position: absolute; pointer-events: none; z-index: 5;
+    background: var(--hs-card); border: 1px solid var(--hs-border); border-radius: 7px;
+    padding: 6px 10px; font-size: .76em; line-height: 1.55; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,.25); color: var(--hs-text);
+  }
+  .chart-tip b { font-weight: 600; }
+  .chart-legend { display: flex; gap: 14px; font-size: .78em; color: var(--hs-text2); }
+  .chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .chart-legend i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+  .stats-metrics {
+    flex: 0 0 34%; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    align-content: start;
+  }
+  .metric { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .metric .v { font-size: 1.55em; font-weight: 700; line-height: 1.1; white-space: nowrap; }
+  .metric .u { font-size: .74em; color: var(--hs-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 640px) { .stats-wrap { flex-direction: column; } .stats-metrics { flex: none; } }
+</style>
+</head>
+<body>
+  <div class="banner">
+    <img src="banner.webp" alt="Halogen">
+    <div class="header">
+      Halogen 控制面板
+    </div>
+    <div class="live-metrics hidden" id="live-metrics">
+      <span class="lm" data-tip="KV 池占用（positions held / pool）">KV <span class="kv-bar"><i id="lm-kv-bar"></i></span><b id="lm-kv">—</b></span>
+      <span class="lm" data-tip="当前生成吞吐（自上次抓取均值）">decode <b id="lm-dec">—</b> tok/s</span>
+      <span class="lm" data-tip="当前 prefill 吞吐">prefill <b id="lm-pre">—</b> tok/s</span>
+      <span class="lm" data-tip="处理中 / 排队中的请求数">请求 <b id="lm-req">—</b></span>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab active" id="tab-status" data-page="status-page">状态</button>
+    <button class="tab" id="tab-env" data-page="env-page">环境</button>
+    <button class="tab" id="tab-logs" data-page="log-page">日志</button>
+    <button class="tab gear" id="tab-settings" data-page="settings-page" data-tip="服务设置"><svg class="ic" style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+  </div>
+
+  <!-- ============ 状态页 ============ -->
+  <div class="page active" id="status-page">
+    <div class="card">
+      <div class="row">
+        <span class="status-dot off" id="dot"></span>
+        <h1 id="title">Halogen 模型服务</h1>
+        <span class="sub" id="api"></span>
+        <button class="ghost icon-only" id="btn-refresh" style="margin-left:auto" data-tip="刷新状态"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
+      </div>
+      <dl class="kv">
+        <dt>容器</dt><dd id="container">—</dd>
+        <dt id="dt-image">镜像</dt><dd class="with-pill"><span id="image">—</span><button class="pill hidden" id="btn-update" data-tip="拉取新镜像并重建容器"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M4 17a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2"/><path d="m7 10-3 2 3 2"/><path d="m17 10 3 2-3 2"/></svg><span id="upd-label">更新</span></button></dd>
+        <dt class="hidden" id="dt-upd">更新中</dt><dd class="hidden" id="upd-progress" style="color:var(--hs-accent)"><span id="upd-text"></span><button class="pill hidden" id="btn-upd-cancel" style="margin-left:6px" title="终止拉取"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>取消</button><div class="hidden" id="upd-bar-wrap" style="margin-top:4px;height:5px;border-radius:3px;background:var(--hs-hover);overflow:hidden"><div id="upd-bar" style="height:100%;width:0%;border-radius:3px;background:var(--hs-accent);transition:width .6s ease"></div></div></dd>
+        <dt id="dt-models">模型目录</dt><dd id="models">—</dd>
+      </dl>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="btn-start"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>启动</button>
+        <button id="btn-stop"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>停止</button>
+        <button id="btn-restart"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>重启</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h1>性能统计</h1>
+        <div class="row">
+          <span class="sub" id="stats-count"></span>
+          <button id="btn-stats" class="ghost icon-only" data-tip="重新统计"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
+        </div>
+      </div>
+      <div class="stats-wrap" id="stats-wrap">
+        <div class="stats-chart">
+          <canvas id="stats-canvas"></canvas>
+          <div class="chart-tip hidden" id="chart-tip"></div>
+          <div class="chart-legend">
+            <span><i style="background:var(--hs-accent)"></i>decode tok/s</span>
+            <span><i style="background:var(--hs-green, #3fb950)"></i>prefill tok/s</span>
+            <span><i style="background:var(--hs-text2); opacity:.5"></i>缓存命中 %</span>
+          </div>
+        </div>
+        <div class="stats-metrics" id="stats-metrics">
+          <span class="sub">处理过请求后自动统计</span>
+        </div>
+      </div>
+      <div class="sum-sep"></div>
+      <div class="row" style="justify-content:space-between"><span class="sub">累计（自服务启动以来）</span></div>
+      <div class="sum-grid">
+        <div class="sum-item"><div class="v" id="sum-req">—</div><div class="k">完成请求</div></div>
+        <div class="sum-item"><div class="v" id="sum-prompt">—<small>tok</small></div><div class="k">prefill tokens</div></div>
+        <div class="sum-item"><div class="v" id="sum-gen">—<small>tok</small></div><div class="k">生成 tokens</div></div>
+        <div class="sum-item" data-tip="prompt cache 命中省下的重复 prefill"><div class="v" id="sum-saved">—<small>tok</small></div><div class="k">缓存节省</div></div>
+        <div class="sum-item" data-tip="cache 条目命中 / 总查询"><div class="v" id="sum-hit">—</div><div class="k">缓存命中率</div></div>
+        <div class="sum-item" data-tip="投机解码：draft 提出被接受的比例"><div class="v" id="sum-draft">—</div><div class="k">draft 接受率</div></div>
+        <div class="sum-item" id="power-item" data-tip="整机估算功耗 = GPU 实测（amdgpu PPT）+ 底噪 18W"><div class="v" id="sum-power">—<small>W</small></div><div class="k">当前功耗</div></div>
+        <div class="sum-item" id="energy-item" data-tip="自服务启动以来的估算能耗（每 30 秒积分一次）"><div class="v" id="sum-energy">—</div><div class="k">累计能耗</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 环境页 ============ -->
+  <div class="page" id="env-page">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h1>环境检查</h1>
+        <button id="btn-check" class="ghost icon-only" data-tip="重新检查"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
+      </div>
+      <div id="checks" style="margin-top:8px"><span class="sub">检查中…</span></div>
+    </div>
+  </div>
+
+  <!-- ============ 日志页 ============ -->
+  <div class="page" id="log-page">
+    <div class="row" style="flex:none; justify-content:space-between">
+      <span class="sub" style="display:inline-flex;align-items:center"><span id="log-status">未开始</span><span class="badge hidden" id="badge-engine"><span class="dot"></span>engine</span><span class="badge bad hidden" id="badge-queue">排队中</span></span>
+      <div class="row">
+        <button id="btn-log-pause"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" x2="8" y1="5" y2="19"/><line x1="16" x2="16" y1="5" y2="19"/></svg>暂停</button>
+        <button id="btn-log-resume" class="hidden"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>继续跟踪</button>
+        <button id="btn-log-clear"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>清空</button>
+      </div>
+    </div>
+    <pre id="log-box"></pre>
+  </div>
+
+  <!-- ============ 设置页 ============ -->
+  <div class="page" id="settings-page">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h1>服务设置</h1>
+        <div class="row">
+          <button id="btn-env-save"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>保存</button>
+          <button class="primary" id="btn-env-save-restart"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>保存并重启</button>
+        </div>
+      </div>
+      <p class="sub" style="margin-top:6px">修改后需重启容器生效（「保存并重启」一步完成）。</p>
+    </div>
+
+    <div class="card">
+      <h1>网络</h1>
+      <div class="opt-row">
+        <div class="opt-text"><b>端口</b><span class="sub">API 监听端口，修改后重建容器生效</span></div>
+        <input type="number" id="opt-port" min="1" max="65535" style="width:96px">
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>局域网访问</b><span class="sub">开启后监听 0.0.0.0，局域网内其他设备 / agent 可直接访问；建议同时设置 API 密钥</span></div>
+        <label class="switch"><input type="checkbox" id="opt-lan"><span class="slider"></span></label>
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>API 密钥</b><span class="sub">给 API 端口加密钥，客户端需带 Bearer 密钥访问；留空则不鉴权</span></div>
+        <input type="password" id="opt-apikey" placeholder="留空 = 不启用" style="width:180px" autocomplete="off">
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>统计 API</b><span class="sub">只读 JSON 接口，供其他设备 / agent 拉性能数据（无需模型 API 密钥）。端点：<code>/live</code>、<code>/stats</code>、<code>/status</code>、<code>/all</code>；保存即生效</span></div>
+        <label class="switch"><input type="checkbox" id="opt-statsapi"><span class="slider"></span></label>
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>统计 API 端口</b><span class="sub" id="statsapi-url">监听地址跟随局域网访问开关</span></div>
+        <input type="number" id="opt-statsapiport" min="1" max="65535" style="width:96px">
+      </div>
+    </div>
+
+    <div class="card">
+      <h1>模型</h1>
+      <div class="opt-row">
+        <div class="opt-text"><b>图片识别</b><span class="sub">让模型能看图（视觉理解）。开启后请求可携带图片</span></div>
+        <label class="switch"><input type="checkbox" id="opt-vision"><span class="slider"></span></label>
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>旧固件兼容</b><span class="sub">老 GPU 固件（MEC &lt; 0x22）的调度兼容开关；0.18.2+ 通常可自动检测，保留更稳妥</span></div>
+        <label class="switch"><input type="checkbox" id="opt-qsa"><span class="slider"></span></label>
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>默认思考</b><span class="sub">请求未指定时，模型是否输出思考过程</span></div>
+        <select id="opt-thinking">
+          <option value="default">默认（开启）</option>
+          <option value="on">强制开启</option>
+          <option value="off">关闭</option>
+        </select>
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>默认推理档位</b><span class="sub">请求未指定时的思考深度，档位越高想得越久</span></div>
+        <select id="opt-effort">
+          <option value="">默认（xhigh）</option>
+          <option value="minimal">minimal</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+          <option value="xhigh">xhigh</option>
+        </select>
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>并发生成数</b><span class="sub">同时生成的会话数（每路约 115MB 显存，默认 4，上限 64）</span></div>
+        <input type="number" id="opt-slots" min="1" max="64" style="width:76px">
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>8-bit KV 缓存</b><span class="sub">KV 缓存改用 8-bit，内存占用约省 43%（14.4→8.2 GiB）；解码略慢 0.2–1.9%，需 0.18.9+，重建容器生效</span></div>
+        <label class="switch"><input type="checkbox" id="opt-kv8"><span class="slider"></span></label>
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>KV 池容量</b><span class="sub">默认 524K positions（约 8 个 262K 上下文的 1/4）。2M 池可驻留 8 个满上下文对话，约 41 GiB 显存，需 KV8 + 0.18.15+，且单轮回答上限降为 16K tokens；重建容器生效</span></div>
+        <select id="opt-kvpool">
+          <option value="0">默认（524K）</option>
+          <option value="1048576">1M</option>
+          <option value="2097152">2M（需 KV8）</option>
+        </select>
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>缓存条目数</b><span class="sub">HALOGEN_CACHE_ENTRIES：能同时驻留缓存的对话前缀数，每条约 115MB 内存，一个对话约占 6 条。默认 24（1M 池自动扩到 36，约养 6 个对话）；48 约养 8 个、多占 ~1.4GB。0 = 用引擎默认，重建容器生效</span></div>
+        <input type="number" id="opt-cacheentries" min="0" max="256" step="6" style="width:76px">
+      </div>
+      <div class="opt-row">
+        <div class="opt-text"><b>缓存分支数</b><span class="sub">HALOGEN_CACHE_BRANCHES：2（默认）= 对话 + 1 个分支；3 = 父对话 + 2 个子 agent 并行 fan-out 时父对话续写点不被子任务挤掉。Finch 多 agent 场景建议开 3，每对话多占约 115MB，重建容器生效</span></div>
+        <label class="switch"><input type="checkbox" id="opt-cachebranches"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h1>当前生效的启动参数</h1>
+      <div class="sub" id="env-preview" style="margin-top:6px; font-family:var(--finch-font-code, monospace); font-size:.85em">—</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  const api = window.finch;
+  const $ = (id) => document.getElementById(id);
+  const actionBtns = ['btn-start', 'btn-stop', 'btn-restart'];
+  let busy = false;
+  let streaming = false;
+  let logPaused = false;
+  let pendingChunks = [];   // chunks buffered while log tab not visible
+  let atBottom = true;
+
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3500);
+  }
+
+  function send(msg) { if (api) api.postMessage(msg); else toast('Bridge 不可用'); }
+
+  function setBusy(b) {
+    busy = b;
+    actionBtns.forEach((id) => { $(id).disabled = b; });
+    $('btn-refresh').innerHTML = b ? '<span class="spin"></span>' : '⟳ 刷新';
+  }
+
+  function renderStatus(s) {
+    $('dot').className = 'status-dot ' + (s.running ? 'on' : 'off');
+    $('title').textContent = s.running ? '运行中' : '已停止';
+    $('api').textContent = 'http://127.0.0.1:' + s.port + (s.health.reachable && s.health.latencyMs != null ? ' · ' + s.health.latencyMs + 'ms' : '');
+    if (s.lanIp) $('api').textContent += '  ·  局域网 http://' + s.lanIp + ':' + s.port;
+    $('container').textContent = s.container
+      ? s.containerName + ' [' + s.container.state + '] ' + s.container.status
+      : '未创建（首次启动自动创建）';
+    if (s.foreign && s.foreign.length) {
+      $('container').textContent += ' ⚠ 其他: ' + s.foreign.map(f => f.name + '[' + f.state + ']').join(', ');
+    }
+    $('image').textContent = s.image;
+    $('dt-image').setAttribute('data-tip', s.image);
+    $('models').textContent = s.modelsDir;
+    $('dt-models').setAttribute('data-tip', s.modelsDir);
+    $('btn-start').disabled = busy || s.running;
+    $('btn-stop').disabled = busy || !s.running;
+    $('btn-restart').disabled = busy;
+  }
+
+  function renderCheck(items) {
+    const box = $('checks');
+    box.innerHTML = '';
+    let updAvailable = false;
+    items.forEach((i) => {
+      const d = document.createElement('div');
+      d.className = 'check-item';
+      d.textContent = (i.ok ? '✅ ' : '❌ ') + i.label;
+      if (i.detail) { const s = document.createElement('span'); s.className = 'd'; s.textContent = i.detail; d.appendChild(s); }
+      if (i.updateAvailable) updAvailable = true;
+      box.appendChild(d);
+    });
+    $('btn-update').classList.toggle('hidden', !updAvailable);
+  }
+
+  // ---- performance stats: chart + big-number metrics ----
+  let lastStats = null;
+  let chartGeom = null;   // { padL, cw, n } for hover hit-testing
+  let hoverIdx = -1;
+
+  function cssVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
+  function metricHTML(value, unit, color) {
+    return '<div class="metric"><span class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + value + '</span><span class="u">' + unit + '</span></div>';
+  }
+
+  function renderStats(data) {
+    if (!data || !data.points || !data.points.length) {
+      $('stats-metrics').innerHTML = '<span class="sub">日志里还没有请求数据</span>';
+      $('stats-count').textContent = '';
+      lastStats = null;
+      drawChart();
+      return;
+    }
+    lastStats = data;
+    lastStatsAt = Date.now();
+    const s = data.summary;
+    const f = (n, d) => (n === undefined || n === null) ? '—' : n.toFixed(d === undefined ? 1 : d);
+    $('stats-count').textContent = '最近 ' + data.count + ' 个请求';
+    $('stats-metrics').innerHTML = [
+      metricHTML(f(s.decodeAvg), '平均 decode tok/s', cssVar('--hs-accent', '#4c8dff')),
+      metricHTML(f(s.decodePeak), '峰值 decode tok/s', ''),
+      metricHTML(f(s.prefillColdAvg, 0), '冷 prefill tok/s', cssVar('--hs-green', '#3fb950')),
+      metricHTML(f(s.cacheAvg) + '%', '平均缓存命中率', ''),
+      metricHTML(f(s.commitAvg, 2), 'MTP tok/轮', ''),
+    ].join('');
+    drawChart();
+  }
+
+  function drawChart() {
+    const canvas = $('stats-canvas');
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    const ctx2 = canvas.getContext('2d');
+    ctx2.scale(dpr, dpr);
+    ctx2.clearRect(0, 0, w, h);
+    const padL = 34, padR = 8, padT = 8, padB = 16;
+    const cw = w - padL - padR, ch = h - padT - padB;
+    // grid + y labels — LOG scale: prefill (~1500) and decode (~60) differ 20x+
+    const pts = lastStats ? lastStats.points : [];
+    const speeds = pts.flatMap((p) => [p.decode, p.prefill].filter((n) => typeof n === 'number'));
+    const maxSpeed = speeds.length ? Math.max(100, Math.ceil(Math.max(...speeds) / 100) * 100) : 100;
+    const MIN_S = 10;
+    const logSpan = Math.log10(maxSpeed / MIN_S);
+    const ySpeed = (v) => padT + ch - (Math.log10(Math.min(Math.max(v, MIN_S), maxSpeed) / MIN_S) / logSpan) * ch;
+    chartGeom = { padL, padR, padT, padB, cw, ch, w, h, ySpeed };
+    ctx2.font = '10px sans-serif';
+    ctx2.fillStyle = cssVar('--hs-text2', '#888');
+    ctx2.strokeStyle = cssVar('--hs-border', '#333');
+    ctx2.lineWidth = 1;
+    const ticks = [10, 30, 100, 300, 1000, 3000, 10000].filter((t) => t <= maxSpeed);
+    ticks.forEach((t) => {
+      const y = ySpeed(t);
+      ctx2.globalAlpha = .45;
+      ctx2.beginPath(); ctx2.moveTo(padL, y); ctx2.lineTo(w - padR, y); ctx2.stroke();
+      ctx2.globalAlpha = 1;
+      ctx2.textAlign = 'right'; ctx2.textBaseline = 'middle';
+      ctx2.fillText(t >= 1000 ? (t / 1000) + 'k' : String(t), padL - 5, y);
+    });
+    if (!pts.length) {
+      ctx2.textAlign = 'center'; ctx2.fillStyle = cssVar('--hs-text2', '#888');
+      ctx2.fillText('暂无数据', w / 2, h / 2);
+      return;
+    }
+    const xAt = (i) => padL + (pts.length === 1 ? cw / 2 : (cw * i / (pts.length - 1)));
+    chartGeom.xAt = xAt;
+    // cache % as faint area (right axis 0-100 mapped to full height)
+    const cachePts = pts.map((p, i) => [xAt(i), padT + ch - ((p.cached ?? 0) / 100) * ch]).filter((_, i) => typeof pts[i].cached === 'number');
+    if (cachePts.length > 1) {
+      ctx2.beginPath();
+      ctx2.moveTo(cachePts[0][0], padT + ch);
+      cachePts.forEach((p) => ctx2.lineTo(p[0], p[1]));
+      ctx2.lineTo(cachePts[cachePts.length - 1][0], padT + ch);
+      ctx2.closePath();
+      ctx2.fillStyle = cssVar('--hs-text2', '#888');
+      ctx2.globalAlpha = .12;
+      ctx2.fill();
+      ctx2.globalAlpha = 1;
+    }
+    const line = (vals, color) => {
+      ctx2.strokeStyle = color; ctx2.lineWidth = 1.6;
+      ctx2.beginPath();
+      let started = false;
+      pts.forEach((p, i) => {
+        const v = vals(p);
+        if (typeof v !== 'number') { started = false; return; }
+        const x = xAt(i), y = ySpeed(v);
+        if (!started) { ctx2.moveTo(x, y); started = true; } else ctx2.lineTo(x, y);
+      });
+      ctx2.stroke();
+      // dots
+      ctx2.fillStyle = color;
+      pts.forEach((p, i) => {
+        const v = vals(p);
+        if (typeof v !== 'number') return;
+        ctx2.beginPath(); ctx2.arc(xAt(i), ySpeed(v), 2, 0, Math.PI * 2); ctx2.fill();
+      });
+    };
+    line((p) => p.prefill, cssVar('--hs-green', '#3fb950'));
+    line((p) => p.decode, cssVar('--hs-accent', '#4c8dff'));
+    // hover crosshair: vertical line + enlarged dots on the hovered request
+    if (hoverIdx >= 0 && hoverIdx < pts.length) {
+      const hx = chartGeom.xAt(hoverIdx);
+      ctx2.strokeStyle = cssVar('--hs-text2', '#888');
+      ctx2.lineWidth = 1;
+      ctx2.setLineDash([3, 3]);
+      ctx2.beginPath(); ctx2.moveTo(hx, padT); ctx2.lineTo(hx, padT + ch); ctx2.stroke();
+      ctx2.setLineDash([]);
+      const hp = pts[hoverIdx];
+      [[hp.prefill, cssVar('--hs-green', '#3fb950')], [hp.decode, cssVar('--hs-accent', '#4c8dff')]].forEach(([v, c]) => {
+        if (typeof v !== 'number') return;
+        ctx2.fillStyle = c; ctx2.strokeStyle = cssVar('--hs-card', '#1e1e1e'); ctx2.lineWidth = 1.5;
+        ctx2.beginPath(); ctx2.arc(hx, ySpeed(v), 3.5, 0, Math.PI * 2); ctx2.fill(); ctx2.stroke();
+      });
+    }
+    // x labels: first / last request time
+    const fmtT = (t) => { const d = new Date(t); return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0'); };
+    const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+    if (t0 && t1) {
+      ctx2.fillStyle = cssVar('--hs-text2', '#888');
+      ctx2.textAlign = 'left'; ctx2.textBaseline = 'top';
+      ctx2.fillText(fmtT(t0), padL, h - padB + 3);
+      ctx2.textAlign = 'right';
+      ctx2.fillText(fmtT(t1), w - padR, h - padB + 3);
+    }
+  }
+
+  window.addEventListener('resize', () => { if (lastStats) drawChart(); });
+
+  // hover: vertical crosshair + per-request tooltip
+  (function bindChartHover() {
+    const canvas = $('stats-canvas');
+    if (!canvas) return;
+    const tip = $('chart-tip');
+    const fmtT = (t) => {
+      const d = new Date(t);
+      return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0') + ':' + d.getSeconds().toString().padStart(2, '0');
+    };
+    const onMove = (ev) => {
+      if (!lastStats || !lastStats.points.length || !chartGeom || !chartGeom.xAt) return;
+      const rect = canvas.getBoundingClientRect();
+      const mx = ev.clientX - rect.left;
+      const pts = lastStats.points;
+      // nearest point by x distance
+      let best = -1, bestD = Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const d = Math.abs(chartGeom.xAt(i) - mx);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      if (best < 0 || bestD > 24) { onLeave(); return; }
+      if (best !== hoverIdx) { hoverIdx = best; drawChart(); }
+      const p = pts[best];
+      const f = (n, d) => (typeof n === 'number') ? n.toFixed(d === undefined ? 1 : d) : '—';
+      tip.innerHTML =
+        (p.t ? '<b>' + fmtT(p.t) + '</b> #' + (best + 1) + '<br>' : '<b>请求 #' + (best + 1) + '</b><br>') +
+        'decode <b style="color:var(--hs-accent)">' + f(p.decode) + '</b> tok/s<br>' +
+        'prefill <b style="color:var(--hs-green)">' + f(p.prefill, 0) + '</b> tok/s<br>' +
+        '缓存 <b>' + f(p.cached) + '%</b> · 提示 ' + (p.prompt ? (p.prompt / 1000).toFixed(1) + 'k' : '—') + ' tok';
+      tip.classList.remove('hidden');
+      // position: prefer right of the line, flip to left near right edge
+      const hx = chartGeom.xAt(best);
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      let left = hx + 12;
+      if (left + tw > chartGeom.w - 4) left = hx - tw - 12;
+      if (left < 4) left = 4;
+      let top = ev.clientY - rect.top - th / 2;
+      top = Math.max(4, Math.min(top, chartGeom.h - th - 4));
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    };
+    const onLeave = () => {
+      if (hoverIdx !== -1) { hoverIdx = -1; drawChart(); }
+      tip.classList.add('hidden');
+    };
+    canvas.addEventListener('mousemove', onMove);
+    canvas.addEventListener('mouseleave', onLeave);
+  })();
+
+  // ---- log helpers ----
+  const MAX_LOG_CHARS = 400000;
+
+  function appendLog(text, info) {
+    if (logPaused) { pendingChunks.push({ text, info }); return; }
+    const box = $('log-box');
+    atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    if (info) {
+      const span = document.createElement('span');
+      span.className = 'log-line-info';
+      span.textContent = text.endsWith('\n') ? text : text + '\n';
+      box.appendChild(span);
+    } else {
+      box.appendChild(document.createTextNode(text));
+    }
+    // trim old content
+    if (box.textContent.length > MAX_LOG_CHARS) {
+      const t = box.textContent;
+      box.textContent = t.slice(t.length - MAX_LOG_CHARS * 0.8);
+    }
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  function flushPending() {
+    if (!pendingChunks.length) return;
+    const q = pendingChunks; pendingChunks = [];
+    q.forEach((c) => appendLog(c.text, c.info));
+  }
+
+  function setLogStatus(html) { $('log-status').innerHTML = html; }
+
+  function startStream() {
+    streaming = true; logPaused = false;
+    pendingChunks = [];
+    $('btn-log-pause').classList.remove('hidden');
+    $('btn-log-resume').classList.add('hidden');
+    setLogStatus('<span class="live-dot"></span>实时跟踪中');
+    send({ type: 'log-start', lines: 200 });
+  }
+
+  function stopStream() {
+    streaming = false;
+    send({ type: 'log-stop' });
+  }
+
+  // ---- tabs ----
+  let currentPage = 'status-page';
+  function switchTab(pageId) {
+    if (currentPage === pageId) return;
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.page === pageId));
+    document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === pageId));
+    const was = currentPage;
+    currentPage = pageId;
+    if (pageId === 'log-page') {
+      if (!streaming) startStream();
+      else { logPaused = false; flushPending(); }
+    } else if (was === 'log-page') {
+      logPaused = true; // buffer while away; stream keeps running
+    }
+    if (pageId === 'settings-page') send({ type: 'options-get' });
+  }
+  document.querySelectorAll('.tab').forEach((t) => {
+    t.addEventListener('click', () => switchTab(t.dataset.page));
+  });
+
+  // ---- bridge messages ----
+  let envSeen = false;
+  function onMessage(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'finch:env') {
+      // payload may carry an initial tab (e.g. menu "查看日志" opens the log tab)
+      if (msg.payload && msg.payload.tab === 'log') switchTab('log-page');
+      if (!envSeen) { envSeen = true; send({ type: 'ready' }); }
+      return;
+    }
+    if (msg.type === 'show-tab') {
+      switchTab((msg.tab === 'log' ? 'log' : 'status') + '-page');
+      return;
+    }
+    if (msg.type === 'status') { renderStatus(msg.data); return; }
+    if (msg.type === 'event') { toast(msg.text); refresh(); return; }
+    if (msg.type === 'update-progress') {
+      if (msg.error) {
+        setUpdateBusy(false);
+        toast(msg.text);
+      } else if (msg.done) {
+        setUpdateBusy(false);
+        toast(msg.text);
+      } else {
+        setUpdateBusy(true);
+        $('dt-upd').classList.remove('hidden');
+        $('upd-progress').classList.remove('hidden');
+        $('upd-text').textContent = msg.text;
+        if (msg.prog && msg.prog.total > 0) {
+          $('upd-bar-wrap').classList.remove('hidden');
+          $('upd-bar').style.width = Math.round(msg.prog.pct * 100) + '%';
+        }
+      }
+      return;
+    }
+    if (msg.type === 'check') { renderCheck(msg.items); return; }
+    if (msg.type === 'stats') { renderStats(msg.data); return; }
+    if (msg.type === 'metrics') { renderMetrics(msg.data); return; }
+    if (msg.type === 'log-clear') { $('log-box').textContent = ''; pendingChunks = []; return; }
+    if (msg.type === 'log-info') { appendLog(msg.text, true); return; }
+    if (msg.type === 'log-chunk') { appendLog(msg.text); return; }
+    if (msg.type === 'options') { renderOptions(msg.data || {}); return; }
+  }
+
+  // ---- settings page (friendly options form) ----
+  let currentOptions = null;
+
+  function renderOptions(o) {
+    currentOptions = o;
+    $('opt-vision').checked = !!o.vision;
+    $('opt-qsa').checked = !!o.qsaForceSel;
+    $('opt-thinking').value = o.thinking || 'default';
+    $('opt-effort').value = o.reasoningEffort || '';
+    $('opt-slots').value = o.kvSlots || 4;
+    $('opt-kv8').checked = !!o.kv8;
+    $('opt-kvpool').value = String(o.kvPool || 0);
+    $('opt-cacheentries').value = String(o.cacheEntries || 0);
+    $('opt-cachebranches').checked = Number(o.cacheBranches) === 3;
+    $('opt-apikey').value = o.apiKey || '';
+    $('opt-port').value = o.port || 8731;
+    $('opt-lan').checked = !!o.lan;
+    $('opt-statsapi').checked = !!o.statsApi;
+    $('opt-statsapiport').value = o.statsApiPort || 8732;
+    updateEnvPreview();
+  }
+
+  function collectOptions() {
+    return {
+      vision: $('opt-vision').checked,
+      qsaForceSel: $('opt-qsa').checked,
+      apiKey: $('opt-apikey').value.trim(),
+      thinking: $('opt-thinking').value,
+      reasoningEffort: $('opt-effort').value,
+      kvSlots: Number($('opt-slots').value) || 4,
+      kv8: $('opt-kv8').checked,
+      kvPool: Number($('opt-kvpool').value) || 0,
+      cacheEntries: Math.min(Math.max(Number($('opt-cacheentries').value) || 0, 0), 256),
+      cacheBranches: $('opt-cachebranches').checked ? 3 : 0,
+      port: Number($('opt-port').value) || 8731,
+      lan: $('opt-lan').checked,
+      statsApi: $('opt-statsapi').checked,
+      statsApiPort: Number($('opt-statsapiport').value) || 8732,
+    };
+  }
+
+  // mirror backend optionsToEnv() for live preview
+  function updateEnvPreview() {
+    const o = collectOptions();
+    const env = [];
+    if (o.vision) env.push('HALOGEN_VISION_TOWER=1');
+    if (o.qsaForceSel) env.push('HALOGEN_QSA_FORCE_SEL=1');
+    if (o.apiKey) env.push('HALOGEN_API_KEY=••••••');
+    if (o.thinking === 'on') env.push('HALOGEN_ENABLE_THINKING=1');
+    else if (o.thinking === 'off') env.push('HALOGEN_ENABLE_THINKING=0');
+    if (o.reasoningEffort) env.push('HALOGEN_REASONING_EFFORT=' + o.reasoningEffort);
+    const slots = Math.min(Math.max(Math.round(o.kvSlots || 4), 1), 64);
+    if (slots !== 4) env.push('HALOGEN_KV_SLOTS=' + slots);
+    if (o.kv8) env.push('HALOGEN_KV8=1');
+    if (o.kvPool) {
+      env.push('HALOGEN_KV_POOL_POSITIONS=' + o.kvPool);
+      if (o.kvPool >= 2097152) env.push('HALOGEN_MAX_TOK=16384');
+    }
+    if (o.cacheEntries) env.push('HALOGEN_CACHE_ENTRIES=' + o.cacheEntries);
+    if (o.cacheBranches === 3) env.push('HALOGEN_CACHE_BRANCHES=3');
+    $('env-preview').textContent = env.length ? env.map((e) => '-e ' + e).join('  ') : '（无额外参数，全部使用默认值）';
+  }
+
+  ['opt-vision', 'opt-qsa', 'opt-thinking', 'opt-effort', 'opt-slots', 'opt-kv8', 'opt-kvpool', 'opt-cacheentries', 'opt-cachebranches', 'opt-apikey', 'opt-port', 'opt-lan', 'opt-statsapi', 'opt-statsapiport'].forEach((id) => {
+    $(id).addEventListener('input', updateEnvPreview);
+    $(id).addEventListener('change', updateEnvPreview);
+  });
+
+  $('btn-env-save').addEventListener('click', () => {
+    send({ type: 'options-save', vars: collectOptions() });
+  });
+  $('btn-env-save-restart').addEventListener('click', async () => {
+    const ok = api && api.ui && api.ui.confirm
+      ? (await api.ui.confirm({ title: '保存并重启服务', message: '将按新设置重建容器，服务会中断直到模型重新加载。继续？', confirmLabel: '重启', variant: 'danger' })).confirmed
+      : true;
+    if (!ok) return;
+    send({ type: 'options-save', vars: collectOptions() });
+    setBusy(true);
+    send({ type: 'recreate' }); // rebuild container so new settings take effect
+    setTimeout(() => setBusy(false), 120000);
+  });
+
+  async function refresh() { if (api) send({ type: 'refresh' }); }
+
+  if (api && api.onMessage) {
+    api.onMessage(onMessage);
+    send({ type: 'ready' });
+  }
+
+  // ---- buttons ----
+  $('btn-start').addEventListener('click', () => { setBusy(true); send({ type: 'start' }); setTimeout(() => setBusy(false), 60000); });
+  $('btn-stop').addEventListener('click', () => { setBusy(true); send({ type: 'stop' }); setTimeout(() => setBusy(false), 30000); });
+  $('btn-restart').addEventListener('click', () => { setBusy(true); send({ type: 'restart' }); setTimeout(() => setBusy(false), 60000); });
+  $('btn-refresh').addEventListener('click', () => { refresh(); send({ type: 'check' }); });
+  $('btn-check').addEventListener('click', () => { $('checks').innerHTML = '<span class="sub">检查中…</span>'; send({ type: 'check' }); });
+  let updBusy = false;
+  function setUpdateBusy(b) {
+    updBusy = b;
+    $('btn-update').disabled = b;
+    $('upd-label').textContent = b ? '更新中…' : '更新';
+    $('btn-upd-cancel').classList.toggle('hidden', !b);
+    $('btn-upd-cancel').disabled = false;
+    if (!b) {
+      $('dt-upd').classList.add('hidden');
+      $('upd-progress').classList.add('hidden');
+      $('upd-bar-wrap').classList.add('hidden');
+      $('upd-bar').style.width = '0%';
+    }
+  }
+  $('btn-upd-cancel').addEventListener('click', () => {
+    $('btn-upd-cancel').disabled = true;
+    $('upd-text').textContent = '取消中…';
+    send({ type: 'update-cancel' });
+  });
+  async function doUpdate() {
+    if (updBusy) return;
+    const ok = api && api.ui && api.ui.confirm
+      ? (await api.ui.confirm({ title: '更新镜像', message: '将拉取新镜像并重建容器，服务会中断直到模型重新加载。继续？', confirmLabel: '更新', variant: 'danger' })).confirmed
+      : true;
+    if (!ok) return;
+    setUpdateBusy(true);
+    $('dt-upd').classList.remove('hidden');
+    $('upd-text').textContent = '检查最新版本…';
+    $('upd-progress').classList.remove('hidden');
+    send({ type: 'update' });
+  }
+
+  $('btn-log-pause').addEventListener('click', () => {
+    logPaused = true;
+    $('btn-log-pause').classList.add('hidden');
+    $('btn-log-resume').classList.remove('hidden');
+    setLogStatus('已暂停（新日志缓冲中）');
+  });
+  $('btn-log-resume').addEventListener('click', () => {
+    logPaused = false;
+    flushPending();
+    $('btn-log-resume').classList.add('hidden');
+    $('btn-log-pause').classList.remove('hidden');
+    setLogStatus('<span class="live-dot"></span>实时跟踪中');
+  });
+    $('btn-stats').addEventListener('click', () => send({ type: 'stats', lines: 2000 }));
+  $('btn-update').addEventListener('click', doUpdate);
+  $('btn-log-clear').addEventListener('click', () => {
+    $('log-box').textContent = '';
+    pendingChunks = [];
+    appendLog('── 已清空（' + new Date().toLocaleTimeString() + '）──', true);
+  });
+
+  // ---- live metrics (from /metrics + /cache) ----
+  let lastReqsTotal;
+  let lastStatsAt = 0;
+  const fmtTok = (n) => n == null ? '—' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n));
+  const fmtPct = (n) => n == null ? '—' : Math.round(n * 100) + '%';
+  function renderMetrics(d) {
+    // log page badges
+    $('badge-engine').classList.toggle('hidden', !(d && d.engineUp));
+    $('badge-queue').classList.toggle('hidden', !(d && ((d.deferred ?? 0) > 0 || (d.queueWaitLongest ?? 0) > 0)));
+    if (!d) { $('live-metrics').classList.add('hidden'); return; }
+    // live strip (only meaningful while running)
+    $('live-metrics').classList.remove('hidden');
+    const r = d.kvRatio ?? 0;
+    $('lm-kv').textContent = fmtPct(d.kvRatio);
+    const bar = $('lm-kv-bar');
+    bar.style.width = Math.min(r * 100, 100) + '%';
+    bar.className = r > 0.9 ? 'hot' : r > 0.7 ? 'warn' : '';
+    $('lm-dec').textContent = d.decodeTps != null ? Math.round(d.decodeTps) : '—';
+    $('lm-pre').textContent = d.prefillTps != null ? Math.round(d.prefillTps) : '—';
+    $('lm-req').textContent = (d.processing ?? 0) + ' / ' + (d.deferred ?? 0);
+    // cumulative grid (inside 性能统计 card)
+    $('sum-req').textContent = d.requestsTotal != null ? String(d.requestsTotal) : '—';
+    $('sum-prompt').innerHTML = fmtTok(d.promptTokens) + '<small>tok</small>';
+    $('sum-gen').innerHTML = fmtTok(d.predictedTokens) + '<small>tok</small>';
+    $('sum-saved').innerHTML = fmtTok(d.promptTokensSaved ?? d.promptCachedTokens) + '<small>tok</small>';
+    const hits = d.cacheHits, misses = d.cacheMisses;
+    $('sum-hit').textContent = hits != null && (hits + (misses ?? 0)) > 0 ? fmtPct(hits / (hits + misses)) : '—';
+    $('sum-draft').textContent = d.draftProposed ? fmtPct((d.draftAccepted ?? 0) / d.draftProposed) : '—';
+    // power
+    if (d.estW != null) {
+      $('sum-power').innerHTML = Math.round(d.estW) + '<small>W</small>';
+      $('power-item').setAttribute('data-tip', 'GPU 实测 ' + Math.round(d.gpuW ?? 0) + ' W（占用 ' + (d.gpuBusy ?? 0) + '%）+ 底噪 18 W');
+    } else { $('sum-power').innerHTML = '—<small>W</small>'; }
+    const wh = d.energyWh;
+    $('sum-energy').textContent = wh == null ? '—' : wh >= 1000 ? (wh / 1000).toFixed(2) + ' kWh' : wh >= 10 ? Math.round(wh) + ' Wh' : wh.toFixed(1) + ' Wh';
+    // keep the log-parsed chart in sync: new requests arrived → refetch stats (throttled)
+    if (d.requestsTotal != null && d.requestsTotal !== lastReqsTotal) {
+      lastReqsTotal = d.requestsTotal;
+      const now = Date.now();
+      if (now - lastStatsAt > 10000) { lastStatsAt = now; send({ type: 'stats', lines: 2000 }); }
+    }
+  }
+
+  // keep status fresh while on status tab
+  setInterval(() => { if (!busy && !document.hidden && currentPage === 'status-page') send({ type: 'refresh' }); }, 15000);
+  // live metrics poll: fixed 3s, always — the banner strip shows on every tab
+  setInterval(() => send({ type: 'metrics' }), 3000);
+  send({ type: 'metrics' });
+
+  // stop the log stream when the whole panel is hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && streaming) send({ type: 'log-stop' });
+    else if (!document.hidden && streaming && currentPage === 'log-page') send({ type: 'log-start', lines: 50 });
+  });
+  window.addEventListener('pagehide', () => { if (streaming) send({ type: 'log-stop' }); });
+})();
+</script>
+</body>
+</html>
