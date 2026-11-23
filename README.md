@@ -2,9 +2,10 @@
 
 ![Halogen Serve dashboard](docs/screenshot.webp)
 
-A [Finch](https://finch) mini tool (mini program) that manages a local
+A [Finch](https://finchwork.app) mini tool (mini program) that manages a local
 [Halogen](https://github.com/peonist-ai/halogen-flash-server) model inference
-server running in a **podman** container — start / stop / restart, live logs,
+server ([docs](https://peonist-ai.github.io/halogen-flash-server/)) running in
+a **podman** container — start / stop / restart, live logs,
 health and environment checks, performance statistics, and image updates, all
 from a dashboard panel inside Finch.
 
@@ -42,9 +43,10 @@ from a dashboard panel inside Finch.
 
 ## Requirements
 
-- Finch desktop app
+- [Finch](https://finchwork.app) desktop app
 - podman (v4+; tested with 6.x)
-- A machine that can run `halogen-flash-server` (see the upstream docs for
+- A machine that can run `halogen-flash-server` (see the
+  [Halogen docs](https://peonist-ai.github.io/halogen-flash-server/) for
   GPU / memory requirements)
 
 ## Download
