@@ -1,5 +1,7 @@
 # finch-halogen-serve
 
+![Halogen Serve dashboard](docs/screenshot.webp)
+
 A [Finch](https://finch) mini tool (mini program) that manages a local
 [Halogen](https://github.com/peonist-ai/halogen-flash-server) model inference
 server running in a **podman** container — start / stop / restart, live logs,
